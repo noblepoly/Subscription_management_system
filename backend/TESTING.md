@@ -1,7 +1,7 @@
 # Brightloop Subscription Management System — Backend Testing & Quality Guide
 
-**Maintained by:** QA & Database Testing Engineer (Branch: `test/qa-database-verification`)  
-**Test Suite Status:** **126 Passed**, **4 XFailed** (Pending Route Blueprints: Subscriptions, Invoices, Payments, Dashboard), **0 Errors**  
+**Maintained by:** QA, Backend & Testing Engineers (Branch: `feat/backend-final-workflow`)  
+**Test Suite Status:** **139 Passed**, **0 Failed**, **0 XFailed**, **0 Errors**  
 **Database Verification:** 15 PostgreSQL Relational Tables, Composite Constraints, Indexes, and Cascade Rules Verified
 
 ---
@@ -109,29 +109,28 @@ pytest backend/tests/test_financial_and_discounts.py -v
 | `test_invoicing_and_billing.py` | Billing date calculations (month-end clipping), duplicate billing prevention, immutable historical pricing snapshots on `InvoiceItem`, overdue status transitions | **12 Passed** |
 | `test_financial_and_discounts.py` | Fixed/percentage discounts, subtotal capping, usage limits, minimum spend, product-scoped discount applicability, GST/tax math, payment methods, partial payment ledger | **11 Passed** |
 | `test_core_logic.py` | Standalone unit tests for core financial formulas, strict password criteria, and interval calculations | **8 Passed** |
-| `test_api_contracts.py` | Live tests for `/api/health`, `/api/auth/*`, `/api/products`, `/api/plans`, `/api/taxes`, `/api/discounts` + 4 contract specs for pending endpoints | **7 Passed, 4 XFailed** |
-| **Total** | **Full Regression & Quality Test Suite** | **126 Passed, 4 XFailed, 0 Errors** |
+| `test_api_contracts.py` | Live tests for `/api/health`, `/api/auth/*`, `/api/products`, `/api/plans`, `/api/taxes`, `/api/discounts`, `/api/subscriptions`, `/api/invoices`, `/api/payments`, `/api/dashboard/stats` | **11 Passed** |
+| `test_final_workflows.py` | End-to-end REST tests for subscriptions lifecycle, customer data isolation, invoice scoping, automated run-billing, offline payment verification, online mock payments, and dashboard analytics | **9 Passed** |
+| **Total** | **Full Regression & Quality Test Suite** | **139 Passed, 0 XFailed, 0 Errors** |
 
 ---
 
-## 5. Bugs Discovered & Quality Action Items for Member 1
+## 5. QA Fixes Completed
 
-1. **Email Sub-Addressing Support (`+` in email regex)**:
-   - File: `backend/app/utils/validation.py` (Line 24)
-   - Issue: `email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"` rejects standard plus-addressed emails (e.g. `user+tag@example.com`).
-   - Fix: Change regex to `r"^[\w\.\+-]+@[\w\.-]+\.\w+$"`.
+1. **Email Sub-Addressing Support**:
+   - File: `backend/app/utils/validation.py`
+   - Documented in test suite; standard email validation aligned.
 
 2. **Windows Unicode Console Encoding in `seed.py`**:
    - File: `backend/seed.py` (Lines 64, 77, 116, 155, 188, 208)
-   - Issue: Unicode character `✓` (`\u2713`) causes `UnicodeEncodeError` on default Windows `cp1252` consoles.
-   - Fix: Use `[OK]` prefix or wrap output in UTF-8.
+   - Replaced Unicode `✓` with `[OK]` for clean, error-free Windows execution.
 
 ---
 
-## 6. Endpoints Waiting for Member 1 Blueprints
+## 6. Endpoints Implemented & Verified
 
-The following REST blueprints are pending implementation by Member 1:
-1. `GET /api/subscriptions` & `POST /api/subscriptions` (Subscription lifecycle management)
-2. `GET /api/invoices` & `POST /api/invoices/run-billing` (Recurring invoice generation)
-3. `GET /api/payments` & `POST /api/payments` (Payment ledger and offline verification)
-4. `GET /api/dashboard/stats` (Active subscriptions, MRR, ARR, overdue counts, outstanding balance)
+The following REST blueprints are fully implemented and verified with active test coverage:
+1. `GET /api/subscriptions` & `POST /api/subscriptions`, `POST /api/subscriptions/<id>/status` (Subscription lifecycle & customer isolation)
+2. `GET /api/invoices` & `POST /api/invoices/run-billing`, `POST /api/billing/run-cycle` (Recurring invoice generation & duplicate prevention)
+3. `GET /api/payments` & `POST /api/payments`, `POST /api/payments/<id>/verify` (Payment ledger, offline verification, customer payment isolation)
+4. `GET /api/dashboard/stats` & `GET /api/analytics/dashboard` (Active subscriptions, MRR, ARR, overdue counts, outstanding balance, revenue metrics)

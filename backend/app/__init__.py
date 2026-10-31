@@ -8,6 +8,10 @@ from app.routes.product_routes import product_bp
 from app.routes.plan_routes import plan_bp
 from app.routes.tax_routes import tax_bp
 from app.routes.discount_routes import discount_bp
+from app.routes.subscription_routes import subscription_bp
+from app.routes.invoice_routes import invoice_bp, billing_bp
+from app.routes.payment_routes import payment_bp
+from app.routes.dashboard_routes import dashboard_bp
 
 def create_app():
     app = Flask(__name__)
@@ -23,6 +27,11 @@ def create_app():
     app.register_blueprint(plan_bp)
     app.register_blueprint(tax_bp)
     app.register_blueprint(discount_bp)
+    app.register_blueprint(subscription_bp)
+    app.register_blueprint(invoice_bp)
+    app.register_blueprint(billing_bp)
+    app.register_blueprint(payment_bp)
+    app.register_blueprint(dashboard_bp)
 
     @app.teardown_appcontext
     def shutdown_session(exception=None):

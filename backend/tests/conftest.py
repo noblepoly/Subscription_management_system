@@ -21,7 +21,11 @@ from app import create_app
 from app.db import Base
 import app.db
 import app.services.billing_engine
-from app.routes import product_routes, plan_routes, tax_routes, discount_routes, auth_routes, user_routes
+from app.routes import (
+    product_routes, plan_routes, tax_routes, discount_routes,
+    auth_routes, user_routes, subscription_routes, invoice_routes,
+    payment_routes, dashboard_routes
+)
 from app.models.user import User, PasswordResetToken
 from app.models.product import Product, ProductVariant
 from app.models.plan import SubscriptionPlan
@@ -79,6 +83,9 @@ def db_session(engine):
     discount_routes.db_session = session
     auth_routes.db_session = session
     user_routes.db_session = session
+    subscription_routes.db_session = session
+    invoice_routes.db_session = session
+    payment_routes.db_session = session
 
     yield session
 
@@ -96,6 +103,9 @@ def db_session(engine):
     discount_routes.db_session = orig_db_session
     auth_routes.db_session = orig_db_session
     user_routes.db_session = orig_db_session
+    subscription_routes.db_session = orig_db_session
+    invoice_routes.db_session = orig_db_session
+    payment_routes.db_session = orig_db_session
     Base.query = orig_db_session.query_property()
 
 @pytest.fixture(scope="function")

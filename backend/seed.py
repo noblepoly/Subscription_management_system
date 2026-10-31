@@ -61,7 +61,7 @@ def seed_database():
 
         db_session.add_all([admin, staff, customer1, customer2])
         db_session.flush()
-        print("  ✓ Created Admin, Staff, and Customer users")
+        print("  [OK] Created Admin, Staff, and Customer users")
     else:
         admin = User.query.filter_by(role="ADMIN").first()
         staff = User.query.filter_by(role="STAFF").first()
@@ -74,7 +74,7 @@ def seed_database():
         tax_zero = TaxRate(name="Zero Tax (Export)", rate_percentage=Decimal("0.000"))
         db_session.add_all([tax_gst, tax_vat, tax_zero])
         db_session.flush()
-        print("  ✓ Created Tax rates")
+        print("  [OK] Created Tax rates")
     else:
         tax_gst = TaxRate.query.filter_by(name="GST 18%").first()
 
@@ -113,7 +113,7 @@ def seed_database():
         )
         db_session.add_all([disc_welcome, disc_flat, disc_expired])
         db_session.flush()
-        print("  ✓ Created Discounts (Percentage, Fixed, and Expired)")
+        print("  [OK] Created Discounts (Percentage, Fixed, and Expired)")
     else:
         disc_welcome = Discount.query.filter_by(code="WELCOME10").first()
 
@@ -152,7 +152,7 @@ def seed_database():
         )
         db_session.add(prod_hardware)
         db_session.flush()
-        print("  ✓ Created Products and Variants")
+        print("  [OK] Created Products and Variants")
     else:
         prod_crm = Product.query.first()
         v_pro = ProductVariant.query.first()
@@ -185,7 +185,7 @@ def seed_database():
         )
         db_session.add_all([plan_monthly, plan_quarterly, plan_annual])
         db_session.flush()
-        print("  ✓ Created Monthly, Quarterly (3-Month), and Annual Plans")
+        print("  [OK] Created Monthly, Quarterly (3-Month), and Annual Plans")
     else:
         plan_monthly = SubscriptionPlan.query.first()
 
@@ -205,7 +205,7 @@ def seed_database():
         t_item1 = QuotationTemplateItem(template_id=template.id, product_id=prod_crm.id, variant_id=v_pro.id, quantity=1)
         db_session.add(t_item1)
         db_session.flush()
-        print("  ✓ Created Quotation Templates")
+        print("  [OK] Created Quotation Templates")
 
     db_session.commit()
     print("Database seeding completed successfully!")

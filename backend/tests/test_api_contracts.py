@@ -77,25 +77,21 @@ class TestAPIContractsAndHealth:
         assert isinstance(discounts, list)
 
     # =========================================================================
-    # CONTRACTS WAITING FOR MEMBER 1 (Pending Route Blueprints)
+    # CONTRACTS IMPLEMENTED (REST Route Blueprints)
     # =========================================================================
 
-    @pytest.mark.xfail(reason="Waiting for Member 1 to implement subscriptions blueprint (/api/subscriptions)")
     def test_subscriptions_contract(self, client):
         res = client.get("/api/subscriptions")
         assert res.status_code in (200, 401)
 
-    @pytest.mark.xfail(reason="Waiting for Member 1 to implement invoices blueprint (/api/invoices)")
     def test_invoices_contract(self, client):
         res = client.get("/api/invoices")
         assert res.status_code in (200, 401)
 
-    @pytest.mark.xfail(reason="Waiting for Member 1 to implement payments blueprint (/api/payments)")
     def test_payments_contract(self, client):
         res = client.get("/api/payments")
         assert res.status_code in (200, 401)
 
-    @pytest.mark.xfail(reason="Waiting for Member 1 to implement dashboard analytics blueprint (/api/dashboard/stats)")
     def test_dashboard_analytics_contract(self, client):
         res = client.get("/api/dashboard/stats")
         assert res.status_code in (200, 401)
