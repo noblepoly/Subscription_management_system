@@ -16,6 +16,168 @@ from app.utils.financial import quantize_money, compute_totals
 
 quotation_bp = Blueprint("quotations", __name__, url_prefix="/api/quotations")
 
+@quotation_bp.route("/<uuid:quotation_id>", methods=["PUT"])
+@role_required(["ADMIN", "STAFF"])
+def update_quotation(quotation_id):
+    """Update a quotation template and optionally replace its items."""
+    quot = QuotationTemplate.query.filter_by(id=quotation_id).first()
+
+    if not quot:
+        return jsonify({
+            "success": False,
+            "error": "Quotation not found",
+            "code": "QUOTATION_NOT_FOUND"
+        }), 404
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "A valid JSON object is required"}), 400
+
+    # Validate and prepare scalar fields before changing the model.
+    updates = {}
+
+    if "name" in data:
+        name = data["name"]
+        if not isinstance(name, str) or not name.strip():
+            return jsonify({"error": "Quotation name is required"}), 400
+        if len(name.strip()) > 150:
+            return jsonify({"error": "Quotation name cannot exceed 150 characters"}), 400
+        updates["name"] = name.strip()
+
+    for field in ("description", "terms_and_conditions"):
+        if field in data:
+            value = data[field]
+            if value is not None and not isinstance(value, str):
+                return jsonify({"error": f"{field} must be a string or null"}), 400
+            updates[field] = value.strip() or None if value else None
+
+    if "default_validity_days" in data:
+        try:
+            validity = int(data["default_validity_days"])
+            if isinstance(data["default_validity_days"], bool) or validity < 1:
+                raise ValueError
+            updates["default_validity_days"] = validity
+        except (ValueError, TypeError, OverflowError):
+            return jsonify({"error": "default_validity_days must be an integer of at least 1"}), 400
+
+    if "is_active" in data:
+        if not isinstance(data["is_active"], bool):
+            return jsonify({"error": "is_active must be true or false"}), 400
+        updates["is_active"] = data["is_active"]
+
+    if "plan_id" in data:
+        if data["plan_id"]:
+            try:
+                plan_id = uuid.UUID(str(data["plan_id"]))
+            except (ValueError, TypeError, AttributeError):
+                return jsonify({"error": "Invalid plan_id UUID"}), 400
+
+            plan = SubscriptionPlan.query.filter_by(id=plan_id).first()
+            if not plan:
+                return jsonify({"error": "Referenced subscription plan does not exist"}), 400
+
+            updates["plan_id"] = plan_id
+        else:
+            updates["plan_id"] = None
+
+    # Validate all replacement items before touching existing items.
+    prepared_items = None
+
+    if "items" in data:
+        items_data = data["items"]
+
+        if not isinstance(items_data, list):
+            return jsonify({"error": "items must be a list"}), 400
+
+        prepared_items = []
+
+        for idx, item in enumerate(items_data):
+            if not isinstance(item, dict):
+                return jsonify({"error": f"Item at index {idx} must be an object"}), 400
+
+            try:
+                product_id = uuid.UUID(str(item.get("product_id")))
+            except (ValueError, TypeError, AttributeError):
+                return jsonify({"error": f"Item at index {idx} has invalid product_id"}), 400
+
+            product = Product.query.filter_by(id=product_id).first()
+            if not product:
+                return jsonify({"error": f"Product at index {idx} does not exist"}), 400
+
+            variant_id = None
+            if item.get("variant_id"):
+                try:
+                    variant_id = uuid.UUID(str(item["variant_id"]))
+                except (ValueError, TypeError, AttributeError):
+                    return jsonify({"error": f"Item at index {idx} has invalid variant_id"}), 400
+
+                variant = ProductVariant.query.filter_by(
+                    id=variant_id, product_id=product_id
+                ).first()
+
+                if not variant:
+                    return jsonify({
+                        "error": f"Variant at index {idx} does not belong to the selected product"
+                    }), 400
+
+            try:
+                raw_qty = item.get("quantity", 1)
+                if isinstance(raw_qty, bool):
+                    raise ValueError
+                quantity = int(raw_qty)
+                if quantity < 1 or str(quantity) != str(raw_qty).strip():
+                    raise ValueError
+            except (ValueError, TypeError, AttributeError, OverflowError):
+                return jsonify({"error": f"Item at index {idx} quantity must be a positive integer"}), 400
+
+            override_price = None
+            if item.get("override_unit_price") is not None:
+                try:
+                    override_price = quantize_money(item["override_unit_price"])
+                    if override_price < Decimal("0.00"):
+                        raise ValueError
+                except (InvalidOperation, ValueError, TypeError):
+                    return jsonify({"error": f"Item at index {idx} has an invalid or negative price"}), 400
+
+            prepared_items.append({
+                "id": uuid.uuid4(),
+                "template_id": quot.id,
+                "product_id": product_id,
+                "variant_id": variant_id,
+                "quantity": quantity,
+                "override_unit_price": override_price
+            })
+
+    # Apply validated changes in one transaction.
+    try:
+        for field, value in updates.items():
+            setattr(quot, field, value)
+
+        if prepared_items is not None:
+            QuotationTemplateItem.query.filter_by(
+                template_id=quot.id
+            ).delete(synchronize_session=False)
+
+            for item_data in prepared_items:
+                db_session.add(QuotationTemplateItem(**item_data))
+
+        db_session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Quotation updated successfully",
+            "quotation": quot.to_dict(),
+            "data": {"quotation": quot.to_dict()}
+        }), 200
+
+    except Exception:
+        db_session.rollback()
+        return jsonify({
+            "success": False,
+            "error": "Failed to update quotation",
+            "code": "UPDATE_FAILED"
+        }), 500
+
 @quotation_bp.route("", methods=["GET"])
 @login_required
 def list_quotations():

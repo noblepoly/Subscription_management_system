@@ -1,118 +1,72 @@
-import { apiRequest, mockStore } from './client';
+import { apiRequest } from './client';
 
 export const quotationsApi = {
-  async getQuotations() {
-    return apiRequest('/quotations', { method: 'GET' }, async () => {
-      return [...mockStore.quotations];
-    });
+  async getQuotations(params = {}) {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.include_inactive) query.append('include_inactive', 'true');
+    const qs = query.toString() ? `?${query.toString()}` : '';
+
+    const { data } = await apiRequest(`/quotations${qs}`, { method: 'GET' });
+    const list = data.quotations || data.data?.quotations || (Array.isArray(data) ? data : []);
+    return { data: list };
+  },
+
+  async getQuotationById(id) {
+    const { data } = await apiRequest(`/quotations/${id}`, { method: 'GET' });
+    return data.quotation || data.data?.quotation || data;
   },
 
   async createQuotation(quotData) {
-    return apiRequest(
-      '/quotations',
-      {
-        method: 'POST',
-        body: JSON.stringify(quotData),
-      },
-      async () => {
-        const plan = mockStore.plans.find((p) => p.id === quotData.plan_id);
-        const newQuot = {
-          id: `quot-${Date.now()}`,
-          name: quotData.name,
-          description: quotData.description || '',
-          plan_id: quotData.plan_id,
-          plan_name: plan ? plan.name : 'Custom Plan',
-          default_validity_days: Number(quotData.default_validity_days) || 30,
-          terms_and_conditions: quotData.terms_and_conditions || '',
-          customer_id: quotData.customer_id || null,
-          customer_name: quotData.customer_name || 'Prospect Customer',
-          is_active: true,
-          total_estimated: Number(quotData.total_estimated) || 0,
-          created_at: new Date().toISOString(),
-          items: (quotData.items || []).map((it, idx) => ({
-            id: `qi-${Date.now()}-${idx}`,
-            product_id: it.product_id,
-            product_name: it.product_name,
-            variant_id: it.variant_id || null,
-            variant_name: it.variant_name || null,
-            quantity: Number(it.quantity) || 1,
-            unit_price: Number(it.unit_price) || 0,
-            additional_price: Number(it.additional_price) || 0,
-            line_total: (Number(it.unit_price) + Number(it.additional_price || 0)) * (Number(it.quantity) || 1),
-          })),
-        };
+    const payload = {
+      name: quotData.name.trim(),
+      description: quotData.description || null,
+      plan_id: quotData.plan_id || null,
+      default_validity_days: Number(quotData.default_validity_days) || 30,
+      terms_and_conditions: quotData.terms_and_conditions || null,
+      items: (quotData.items || []).map((it) => ({
+        product_id: it.product_id,
+        variant_id: it.variant_id || null,
+        quantity: Number(it.quantity) || 1,
+        override_unit_price: it.override_unit_price !== undefined ? Number(it.override_unit_price) : Number(it.unit_price) || 0,
+      })),
+    };
 
-        mockStore.quotations.unshift(newQuot);
-        mockStore.persist('quotations');
-        return newQuot;
-      }
-    );
+    const { data } = await apiRequest('/quotations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.quotation || data.data?.quotation || data;
+  },
+
+  async updateQuotation(id, quotData) {
+    const payload = {
+      name: quotData.name?.trim(),
+      description: quotData.description,
+      plan_id: quotData.plan_id || null,
+      default_validity_days: quotData.default_validity_days !== undefined ? Number(quotData.default_validity_days) : undefined,
+      terms_and_conditions: quotData.terms_and_conditions,
+      is_active: quotData.is_active,
+      items: (quotData.items || []).map((it) => ({
+        product_id: it.product_id,
+        variant_id: it.variant_id || null,
+        quantity: Number(it.quantity) || 1,
+        override_unit_price: it.override_unit_price !== undefined ? Number(it.override_unit_price) : Number(it.unit_price) || 0,
+      })),
+    };
+
+    const { data } = await apiRequest(`/quotations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return data.quotation || data.data?.quotation || data;
   },
 
   async convertToSubscription(quotationId, customerId) {
-    return apiRequest(
-      `/quotations/${quotationId}/convert`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ customer_id: customerId }),
-      },
-      async () => {
-        const quot = mockStore.quotations.find((q) => q.id === quotationId);
-        if (!quot) throw new Error('Quotation not found');
-
-        const customer = mockStore.users.find((u) => u.id === customerId) || {
-          id: customerId,
-          full_name: 'Converted Customer',
-          email: 'customer@client.io',
-        };
-
-        const plan = mockStore.plans.find((p) => p.id === quot.plan_id) || mockStore.plans[0];
-        const subtotal = quot.items.reduce((sum, item) => sum + item.line_total, 0);
-        const taxRate = 18.0; // default standard tax
-        const taxAmount = (subtotal * taxRate) / 100;
-        const recurringTotal = subtotal + taxAmount;
-
-        const subCount = mockStore.subscriptions.length + 1;
-        const subNumber = `SUB-2026-${String(subCount).padStart(5, '0')}`;
-
-        const newSubscription = {
-          id: `sub-${Date.now()}`,
-          subscription_number: subNumber,
-          customer_id: customer.id,
-          customer_name: customer.full_name,
-          customer_email: customer.email,
-          plan_id: plan.id,
-          plan_name: plan.name,
-          billing_interval: plan.billing_interval,
-          interval_count: plan.interval_count,
-          status: 'CONFIRMED', // Converted from quotation to confirmed
-          start_date: new Date().toISOString(),
-          expiry_date: null,
-          next_billing_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          last_billed_date: null,
-          subtotal,
-          discount_amount: 0,
-          tax_amount: Number(taxAmount.toFixed(2)),
-          recurring_total: Number(recurringTotal.toFixed(2)),
-          notes: `Converted from Quotation: ${quot.name}`,
-          created_at: new Date().toISOString(),
-          items: quot.items.map((it, idx) => ({
-            id: `si-${Date.now()}-${idx}`,
-            product_id: it.product_id,
-            product_name: it.product_name,
-            variant_id: it.variant_id,
-            variant_name: it.variant_name,
-            quantity: it.quantity,
-            unit_price: it.unit_price,
-            additional_price: it.additional_price || 0,
-            line_total: it.line_total,
-          })),
-        };
-
-        mockStore.subscriptions.unshift(newSubscription);
-        mockStore.persist('subscriptions');
-        return newSubscription;
-      }
-    );
+    const { data } = await apiRequest(`/quotations/${quotationId}/convert`, {
+      method: 'POST',
+      body: JSON.stringify({ customer_id: customerId }),
+    });
+    return data.subscription || data.data?.subscription || data;
   },
 };

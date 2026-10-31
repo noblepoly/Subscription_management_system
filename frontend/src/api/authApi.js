@@ -1,29 +1,16 @@
-import { apiRequest, mockStore } from './client';
+import { apiRequest } from './client';
 import { validatePassword } from '../utils/validation';
 
 export const authApi = {
   async login(email, password) {
-    return apiRequest(
-      '/auth/login',
-      {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      },
-      async () => {
-        const user = mockStore.users.find(
-          (u) => u.email.toLowerCase() === email.toLowerCase()
-        );
-        if (!user) {
-          throw new Error('Invalid email or password');
-        }
-        // In mock mode, allow standard password or demo
-        const fakeToken = `mock-jwt-token-${user.id}-${Date.now()}`;
-        return {
-          token: fakeToken,
-          user: { ...user },
-        };
-      }
-    );
+    const { data } = await apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+    });
+    // Backend returns { success: true, user: {...}, token: "..." }
+    const user = data.user || data.data?.user;
+    const token = data.token || data.data?.token;
+    return { user, token };
   },
 
   async register(userData) {
@@ -33,71 +20,33 @@ export const authApi = {
       throw new Error(pwdCheck.message);
     }
 
-    return apiRequest(
-      '/auth/register',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          email,
-          password,
-          full_name,
-          company_name,
-          phone,
-          billing_address,
-        }),
-      },
-      async () => {
-        const exists = mockStore.users.some(
-          (u) => u.email.toLowerCase() === email.toLowerCase()
-        );
-        if (exists) {
-          throw new Error('An account with this email already exists.');
-        }
+    const { data } = await apiRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password,
+        full_name: full_name.trim(),
+        company_name: company_name ? company_name.trim() : null,
+        phone: phone ? phone.trim() : null,
+        billing_address: billing_address ? billing_address.trim() : null,
+      }),
+    });
+    const user = data.user || data.data?.user;
+    const token = data.token || data.data?.token;
+    return { user, token, message: data.message };
+  },
 
-        const newUser = {
-          id: `u-${Date.now()}`,
-          email,
-          full_name,
-          company_name: company_name || null,
-          role: 'CUSTOMER', // Strict invariant: public registration ALWAYS creates CUSTOMER
-          phone: phone || null,
-          billing_address: billing_address || null,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        };
-
-        mockStore.users.push(newUser);
-        mockStore.persist('users');
-
-        return {
-          token: `mock-jwt-token-${newUser.id}`,
-          user: newUser,
-          message: 'Registration successful! Welcome to Brightloop.',
-        };
-      }
-    );
+  async getCurrentUser() {
+    const { data } = await apiRequest('/auth/me', { method: 'GET' });
+    return data.user || data.data?.user;
   },
 
   async requestPasswordReset(email) {
-    return apiRequest(
-      '/auth/forgot-password',
-      {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      },
-      async () => {
-        const user = mockStore.users.find(
-          (u) => u.email.toLowerCase() === email.toLowerCase()
-        );
-        if (!user) {
-          return { message: 'If an account exists, a reset link will be sent.' };
-        }
-        return {
-          message: 'Password reset link simulated. Check instructions.',
-          reset_token: `rst-${Math.random().toString(36).substring(2, 10)}`,
-        };
-      }
-    );
+    const { data } = await apiRequest('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+    return data;
   },
 
   async resetPassword(token, newPassword) {
@@ -106,27 +55,10 @@ export const authApi = {
       throw new Error(pwdCheck.message);
     }
 
-    return apiRequest(
-      '/auth/reset-password',
-      {
-        method: 'POST',
-        body: JSON.stringify({ token, new_password: newPassword }),
-      },
-      async () => {
-        return { message: 'Password successfully updated. You may now log in.' };
-      }
-    );
-  },
-
-  async getProfile() {
-    return apiRequest(
-      '/auth/profile',
-      { method: 'GET' },
-      async () => {
-        const currentUserId = localStorage.getItem('bl_user_id');
-        const user = mockStore.users.find((u) => u.id === currentUserId) || mockStore.users[0];
-        return { user };
-      }
-    );
+    const { data } = await apiRequest('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: token.trim(), new_password: newPassword }),
+    });
+    return data;
   },
 };

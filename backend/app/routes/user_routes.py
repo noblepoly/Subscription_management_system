@@ -86,10 +86,10 @@ def create_staff_user():
 
 
 @user_bp.route("", methods=["GET"])
-@role_required(["ADMIN"])
+@role_required(["ADMIN", "STAFF"])
 def list_users():
     """
-    ADMIN only endpoint to view and filter users.
+    ADMIN and STAFF endpoint to view and filter users (e.g. customers).
     Query parameters:
     - role: 'ADMIN', 'STAFF', 'CUSTOMER'
     - is_active: 'true', 'false'

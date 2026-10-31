@@ -27,12 +27,12 @@ def create_app():
     app.register_blueprint(plan_bp)
     app.register_blueprint(tax_bp)
     app.register_blueprint(discount_bp)
+    app.register_blueprint(quotation_bp)
     app.register_blueprint(subscription_bp)
     app.register_blueprint(invoice_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(payment_bp)
     app.register_blueprint(dashboard_bp)
-    app.register_blueprint(quotation_bp)
     @app.teardown_appcontext
     def shutdown_session(exception=None):
         db_session.remove()
