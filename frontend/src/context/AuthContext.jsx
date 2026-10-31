@@ -1,49 +1,50 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../api/authApi';
-import { mockStore } from '../api/client';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try {
-      const savedUser = localStorage.getItem('bl_user');
-      if (savedUser) return JSON.parse(savedUser);
-      // Default to Admin demo user on first load
-      return mockStore.users[0];
-    } catch {
-      return mockStore.users[0];
-    }
-  });
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem('bl_token') || null);
+  const [loading, setLoading] = useState(true);
 
-  const [token, setToken] = useState(() => localStorage.getItem('bl_token') || 'demo-admin-token');
-  const [loading, setLoading] = useState(false);
-
+  // Restore authenticated session from backend on initial mount
   useEffect(() => {
-    if (user) {
-      localStorage.setItem('bl_user', JSON.stringify(user));
-      localStorage.setItem('bl_user_id', user.id);
-    } else {
-      localStorage.removeItem('bl_user');
-      localStorage.removeItem('bl_user_id');
-    }
-  }, [user]);
+    const restoreSession = async () => {
+      const storedToken = localStorage.getItem('bl_token');
+      if (!storedToken) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
 
-  useEffect(() => {
-    if (token) {
-      localStorage.setItem('bl_token', token);
-    } else {
-      localStorage.removeItem('bl_token');
-    }
-  }, [token]);
+      try {
+        const verifiedUser = await authApi.getCurrentUser();
+        setUser(verifiedUser);
+        localStorage.setItem('bl_user', JSON.stringify(verifiedUser));
+      } catch (err) {
+        console.warn('Session expired or invalid token:', err.message);
+        localStorage.removeItem('bl_token');
+        localStorage.removeItem('bl_user');
+        setToken(null);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    restoreSession();
+  }, []);
 
   const login = async (email, password) => {
     setLoading(true);
     try {
-      const { data } = await authApi.login(email, password);
-      setUser(data.user);
-      setToken(data.token);
-      return data.user;
+      const { user: loggedUser, token: receivedToken } = await authApi.login(email, password);
+      setUser(loggedUser);
+      setToken(receivedToken);
+      localStorage.setItem('bl_token', receivedToken);
+      localStorage.setItem('bl_user', JSON.stringify(loggedUser));
+      return loggedUser;
     } finally {
       setLoading(false);
     }
@@ -52,10 +53,12 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     setLoading(true);
     try {
-      const { data } = await authApi.register(userData);
-      setUser(data.user);
-      setToken(data.token);
-      return data;
+      const { user: registeredUser, token: receivedToken, message } = await authApi.register(userData);
+      setUser(registeredUser);
+      setToken(receivedToken);
+      localStorage.setItem('bl_token', receivedToken);
+      localStorage.setItem('bl_user', JSON.stringify(registeredUser));
+      return { user: registeredUser, token: receivedToken, message };
     } finally {
       setLoading(false);
     }
@@ -64,19 +67,8 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     setToken(null);
-    localStorage.removeItem('bl_user');
     localStorage.removeItem('bl_token');
-    localStorage.removeItem('bl_user_id');
-  };
-
-  /**
-   * Hackathon helper: switch instantly between user roles (ADMIN, STAFF, CUSTOMER)
-   * to test role-specific view guards and capabilities.
-   */
-  const switchDemoRole = (role) => {
-    const targetUser = mockStore.users.find((u) => u.role === role) || mockStore.users[0];
-    setUser({ ...targetUser });
-    setToken(`demo-${role.toLowerCase()}-token`);
+    localStorage.removeItem('bl_user');
   };
 
   const value = {
@@ -91,7 +83,6 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
-    switchDemoRole,
     loading,
   };
 

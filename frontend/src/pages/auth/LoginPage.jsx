@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { Sparkles, Lock, Mail, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
+import { Sparkles, Lock, Mail, ArrowRight, ShieldCheck, UserCheck, KeyRound } from 'lucide-react';
 
 export const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, switchDemoRole } = useAuth();
+  const { login } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
 
@@ -35,14 +35,9 @@ export const LoginPage = () => {
     }
   };
 
-  const handleQuickLogin = (role) => {
-    switchDemoRole(role);
-    addToast(`Switched into ${role} role session`, 'info');
-    if (role === 'CUSTOMER') {
-      navigate('/portal');
-    } else {
-      navigate('/dashboard');
-    }
+  const fillCredentials = (seedEmail, seedPassword) => {
+    setEmail(seedEmail);
+    setPassword(seedPassword);
   };
 
   return (
@@ -114,30 +109,34 @@ export const LoginPage = () => {
             </button>
           </form>
 
-          {/* Quick Demo Access Bar */}
+          {/* Quick Credential Autofill (For Hackathon Evaluators - Executes REAL Backend Login) */}
           <div className="mt-6 pt-6 border-t border-slate-700/80">
-            <p className="text-xs text-center font-medium text-slate-400 mb-3">
-              Fast Hackathon Demo Login:
+            <p className="text-xs text-center font-medium text-slate-400 mb-2 flex items-center justify-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Fill Seed Credentials (Real Backend Auth):</span>
             </p>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => handleQuickLogin('ADMIN')}
+                onClick={() => fillCredentials('admin@brightloop.io', 'BrightLoop@2026!')}
                 className="py-1.5 px-2 bg-slate-900/60 hover:bg-slate-700/60 border border-slate-700 rounded-lg text-xs font-medium text-indigo-300 text-center transition-colors flex items-center justify-center gap-1"
+                title="Fill Admin credentials"
               >
                 <ShieldCheck className="w-3.5 h-3.5" /> Admin
               </button>
               <button
                 type="button"
-                onClick={() => handleQuickLogin('STAFF')}
+                onClick={() => fillCredentials('staff@brightloop.io', 'BrightStaff@2026!')}
                 className="py-1.5 px-2 bg-slate-900/60 hover:bg-slate-700/60 border border-slate-700 rounded-lg text-xs font-medium text-blue-300 text-center transition-colors flex items-center justify-center gap-1"
+                title="Fill Staff credentials"
               >
                 <UserCheck className="w-3.5 h-3.5" /> Staff
               </button>
               <button
                 type="button"
-                onClick={() => handleQuickLogin('CUSTOMER')}
+                onClick={() => fillCredentials('sarah.connor@cyberdyne.io', 'Customer@2026!')}
                 className="py-1.5 px-2 bg-slate-900/60 hover:bg-slate-700/60 border border-slate-700 rounded-lg text-xs font-medium text-teal-300 text-center transition-colors flex items-center justify-center gap-1"
+                title="Fill Customer credentials"
               >
                 <UserCheck className="w-3.5 h-3.5" /> Customer
               </button>
