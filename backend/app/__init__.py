@@ -12,7 +12,7 @@ from app.routes.subscription_routes import subscription_bp
 from app.routes.invoice_routes import invoice_bp, billing_bp
 from app.routes.payment_routes import payment_bp
 from app.routes.dashboard_routes import dashboard_bp
-
+from app.routes.quotation_routes import quotation_bp
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -32,7 +32,7 @@ def create_app():
     app.register_blueprint(billing_bp)
     app.register_blueprint(payment_bp)
     app.register_blueprint(dashboard_bp)
-
+    app.register_blueprint(quotation_bp)
     @app.teardown_appcontext
     def shutdown_session(exception=None):
         db_session.remove()
