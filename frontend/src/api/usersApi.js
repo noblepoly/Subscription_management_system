@@ -1,68 +1,49 @@
-import { apiRequest, mockStore } from './client';
+import { apiRequest } from './client';
 import { validatePassword } from '../utils/validation';
 
 export const usersApi = {
-  async getUsers() {
-    return apiRequest('/users', { method: 'GET' }, async () => {
-      return [...mockStore.users];
-    });
+  async getUsers(params = {}) {
+    const query = new URLSearchParams();
+    if (params.role) query.append('role', params.role);
+    if (params.is_active !== undefined) query.append('is_active', String(params.is_active));
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+
+    const { data } = await apiRequest(`/users${qs}`, { method: 'GET' });
+    const list = data.data?.users || data.users || (Array.isArray(data) ? data : []);
+    return { data: list };
   },
 
   async getCustomers() {
-    return apiRequest('/users/customers', { method: 'GET' }, async () => {
-      return mockStore.users.filter((u) => u.role === 'CUSTOMER');
-    });
+    const { data } = await apiRequest('/users?role=CUSTOMER', { method: 'GET' });
+    const list = data.data?.users || data.users || (Array.isArray(data) ? data : []);
+    return { data: list };
   },
 
   async createStaff(staffData) {
-    const { email, password, full_name, phone } = staffData;
+    const { email, password, full_name, phone, company_name } = staffData;
     const pwdCheck = validatePassword(password);
     if (!pwdCheck.valid) {
       throw new Error(pwdCheck.message);
     }
 
-    return apiRequest(
-      '/users/staff',
-      {
-        method: 'POST',
-        body: JSON.stringify(staffData),
-      },
-      async () => {
-        const exists = mockStore.users.some(
-          (u) => u.email.toLowerCase() === email.toLowerCase()
-        );
-        if (exists) throw new Error('A user with this email already exists.');
+    const payload = {
+      email: email.trim().toLowerCase(),
+      password,
+      full_name: full_name.trim(),
+      phone: phone ? phone.trim() : null,
+      company_name: company_name ? company_name.trim() : 'Brightloop Internal Staff',
+    };
 
-        const newStaff = {
-          id: `u-${Date.now()}`,
-          email,
-          full_name,
-          company_name: 'Brightloop Staff',
-          role: 'STAFF', // Created by Admin
-          phone: phone || null,
-          billing_address: null,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        };
-
-        mockStore.users.push(newStaff);
-        mockStore.persist('users');
-        return newStaff;
-      }
-    );
+    const { data } = await apiRequest('/users/staff', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return data.data?.user || data.user || data;
   },
 
   async toggleUserStatus(id) {
-    return apiRequest(
-      `/users/${id}/toggle`,
-      { method: 'PATCH' },
-      async () => {
-        const user = mockStore.users.find((u) => u.id === id);
-        if (!user) throw new Error('User not found');
-        user.is_active = !user.is_active;
-        mockStore.persist('users');
-        return user;
-      }
-    );
+    const { data } = await apiRequest(`/users/${id}/toggle`, { method: 'PATCH' });
+    return data.data?.user || data.user || data;
   },
 };

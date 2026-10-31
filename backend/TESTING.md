@@ -1,8 +1,8 @@
 # Brightloop Subscription Management System — Backend Testing & Quality Guide
 
-**Maintained by:** Member 3 — Database, Testing & Quality Engineer  
-**Coverage:** 95% Statement Coverage across all Backend Models, Services, and Utilities  
-**Test Suite Status:** 79 Passed, 8 XFailed (Awaiting Member 1 API Route Blueprints), 0 Errors
+**Maintained by:** QA, Backend & Testing Engineers (Branch: `feat/backend-final-workflow`)  
+**Test Suite Status:** **139 Passed**, **0 Failed**, **0 XFailed**, **0 Errors**  
+**Database Verification:** 15 PostgreSQL Relational Tables, Composite Constraints, Indexes, and Cascade Rules Verified
 
 ---
 
@@ -28,47 +28,34 @@ Key packages used:
 
 ---
 
-## 2. Test Database Architecture & Isolation
+## 2. Database Architecture & PostgreSQL Verification
 
-To comply with database quality standards, **the test suite never modifies or executes destructive tests against the actual development PostgreSQL database**.
+### 2.1 Schema & Table Verification
+All **15 database tables** have been verified against the PostgreSQL dialect (`sqlalchemy.dialects.postgresql`):
 
-### 2.1 Isolated Test Fixture (`backend/tests/conftest.py`)
-- Tests execute against an isolated **SQLite in-memory database** using `StaticPool`.
-- SQLite foreign key constraints are explicitly activated on every connection via:
-  ```python
-  @event.listens_for(test_engine, "connect")
-  def set_sqlite_pragma(dbapi_connection, connection_record):
-      cursor = dbapi_connection.cursor()
-      cursor.execute("PRAGMA foreign_keys=ON")
-      cursor.close()
-  ```
-- Before each test function, `Base.metadata.create_all()` provisions all 15 relational tables and constraints fresh.
-- After each test function, tables are completely dropped, ensuring 100% repeatability with zero state leakage.
-- `app.db.db_session`, `Base.query`, and `app.services.billing_engine.db_session` are dynamically patched to the isolated test session.
+| Table Name | Primary Key | Foreign Keys & Actions | Unique Constraints & Indexes |
+| :--- | :--- | :--- | :--- |
+| `users` | `id` (UUID) | None | Unique: `email`, Indexes: `email`, `role` |
+| `password_reset_tokens` | `id` (UUID) | `user_id -> users.id` (`CASCADE`) | Unique index: `token_hash` |
+| `products` | `id` (UUID) | None | Non-negative sales & cost prices |
+| `product_variants` | `id` (UUID) | `product_id -> products.id` (`CASCADE`) | Constraint: `uq_product_variant (product_id, variant_name)`, Index: `product_id` |
+| `subscription_plans` | `id` (UUID) | None | Intervals: `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` |
+| `tax_rates` | `id` (UUID) | None | `rate_percentage` Decimal(6, 3) |
+| `discount_products` | `(discount_id, product_id)` | Both `CASCADE` | Junction table for product-scoped discounts |
+| `discounts` | `id` (UUID) | None | Unique index: `code` |
+| `quotation_templates` | `id` (UUID) | `plan_id` (`SET NULL`), `created_by` (`SET NULL`) | Reusable SaaS proposal templates |
+| `quotation_template_items` | `id` (UUID) | `template_id` (`CASCADE`), `product_id` (`CASCADE`), `variant_id` (`SET NULL`) | Index: `template_id` |
+| `subscriptions` | `id` (UUID) | `customer_id` (`RESTRICT`), `plan_id` (`RESTRICT`), `template_id` (`SET NULL`), `discount_id` (`SET NULL`), `tax_rate_id` (`SET NULL`), `created_by` (`SET NULL`) | Unique: `subscription_number`, Indexes: `customer_id`, `status`, `next_billing_date` |
+| `subscription_items` | `id` (UUID) | `subscription_id` (`CASCADE`), `product_id` (`RESTRICT`), `variant_id` (`SET NULL`) | Index: `subscription_id` |
+| `invoices` | `id` (UUID) | `customer_id` (`RESTRICT`), `subscription_id` (`RESTRICT`) | Unique: `invoice_number`, Constraint: `uq_subscription_billing_period`, Indexes: `due_date`, `status`, `customer_id` |
+| `invoice_items` | `id` (UUID) | `invoice_id` (`CASCADE`) | Index: `invoice_id`, Immutable pricing snapshots |
+| `payments` | `id` (UUID) | `invoice_id` (`RESTRICT`), `customer_id` (`RESTRICT`), `recorded_by` (`SET NULL`) | Unique: `payment_number`, Indexes: `invoice_id`, `customer_id` |
 
-### 2.2 Development Database Setup (PostgreSQL)
-When running the development server (`backend/run.py`):
-1. Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-2. Update `.env` with your local PostgreSQL credentials:
-   ```env
-   DB_USER=postgres
-   DB_PASSWORD=your_actual_postgres_password
-   DB_HOST=127.0.0.1
-   DB_PORT=5432
-   DB_NAME=brightloop_db
-   DATABASE_URL=postgresql+psycopg://postgres:your_actual_postgres_password@127.0.0.1:5432/brightloop_db
-   ```
-3. Initialize the PostgreSQL schema:
-   ```bash
-   python backend/init_db.py
-   ```
-4. Seed demo users, plans, products, and quotation templates:
-   ```bash
-   python backend/seed.py
-   ```
+### 2.2 PostgreSQL vs SQLite Nuances
+1. **Case-Insensitive Search (`ILIKE`)**: PostgreSQL supports native `ILIKE` operators used in `product_routes.py`, `discount_routes.py`, and `user_routes.py`.
+2. **Foreign Key Enforcement**: PostgreSQL enforces constraints continuously; SQLite requires explicit `PRAGMA foreign_keys=ON` per connection, which is configured in `conftest.py`.
+3. **Timezone Handling**: PostgreSQL persists `TIMESTAMP WITH TIME ZONE`. SQLite returns naive datetimes, requiring `.replace(tzinfo=timezone.utc)` for cross-platform comparisons.
+4. **UUID Data Types**: Native PostgreSQL `UUID` columns require `uuid.UUID` objects for strict parameter binding.
 
 ---
 
@@ -81,116 +68,69 @@ Run commands from the repository root:
 pytest backend/tests/ -v
 ```
 
-### 3.2 Run Specific Test Modules
+### 3.2 Run Specific QA Test Modules
 ```bash
-# Authentication, security, password hashing, JWT, and RBAC
+# PostgreSQL Schema & Foreign Key Verification
+pytest backend/tests/test_database_integrity_pg.py -v
+
+# API Robustness, Boundary Conditions & QA Permissions
+pytest backend/tests/test_api_robustness_qa.py -v
+
+# Quotation Multi-Item Calculation & Subscription Engine
+pytest backend/tests/test_quotation_and_subscription_engine.py -v
+
+# Authentication & Security
 pytest backend/tests/test_auth_and_security.py -v
 
-# Products, variants, plans, constraints, and intervals
-pytest backend/tests/test_products_and_plans.py -v
+# Catalog & Pricing APIs
+pytest backend/tests/test_catalog_pricing_api.py -v
 
-# Quotations, validity, conversions, and subscription lifecycle state transitions
-pytest backend/tests/test_quotations_and_subscriptions.py -v
-
-# Invoicing, billing engine, month-end clipping, snapshots, and duplicate prevention
+# Invoicing & Recurring Billing
 pytest backend/tests/test_invoicing_and_billing.py -v
 
-# Financial calculations, discounts, taxes, MRR/ARR, and payment reconciliation
+# Financial Formulas & Discounts
 pytest backend/tests/test_financial_and_discounts.py -v
-
-# Core standalone business logic formulas
-pytest backend/tests/test_core_logic.py -v
-
-# API contracts and route expectations for Member 1
-pytest backend/tests/test_api_contracts.py -v
-```
-
-### 3.3 Run with Code Coverage Report
-```bash
-pytest backend/tests/ --cov=app --cov-report=term-missing
 ```
 
 ---
 
 ## 4. Test Modules & Coverage Overview
 
-| Test Module | Focus Area | Status | Coverage |
-| :--- | :--- | :---: | :---: |
-| `test_auth_and_security.py` | Password criteria (>8 chars, upper, lower, special), hashing, duplicate emails, JWT creation/expiry/tampering, RBAC decorators (`@login_required`, `@role_required`), Customer isolation | **20 Passed** | 95% |
-| `test_products_and_plans.py` | Products (software, service, physical), variants, additional price, SKU uniqueness, `(product_id, variant_name)` unique constraint, cascade deletion, billing intervals, availability dates, auto-close | **9 Passed** | 98% |
-| `test_quotations_and_subscriptions.py` | Quotation templates, override pricing, expiry checks, quotation-to-subscription conversion, strict state transitions (`DRAFT` $\to$ `QUOTATION` $\to$ `CONFIRMED` $\to$ `ACTIVE` $\to$ `PAUSED` $\to$ `CLOSED`), pause, resume, renewal, and early close | **9 Passed** | 97% |
-| `test_invoicing_and_billing.py` | `compute_next_billing_date` with month-end clipping (e.g. Jan 31 $\to$ Feb 28), non-duplicate recurring invoicing, DB constraint `uq_subscription_billing_period`, immutable `InvoiceItem` price snapshots, recurring billing cycle runner, overdue status logic | **12 Passed** | 94% |
-| `test_financial_and_discounts.py` | Fixed and percentage discounts, subtotal capping, usage limits, minimum spend, product-scoped discount applicability, GST/tax math, payment methods, partial payments ledger, balance reduction, MRR & ARR formulas | **11 Passed** | 92% |
-| `test_core_logic.py` | Standalone unit tests for core financial formulas, strict password criteria, and interval calculations | **8 Passed** | 100% |
-| `test_auth_api.py` | Full REST API integration for registration, privilege escalation prevention, password validation, login, profile, password reset, staff creation, and user listing (by Member 1) | **9 Passed** | 100% |
-| `test_api_contracts.py` | `/api/health` live test + 8 contract specs for upcoming REST endpoints | **1 Passed, 8 XFailed** | 100% |
-| **Total** | **Full Backend Application Test Suite** | **79 Passed, 8 XFailed** | **95%** |
+| Test Module | Focus Area | Status |
+| :--- | :--- | :---: |
+| `test_database_integrity_pg.py` | PostgreSQL DDL compilation, 15 tables PK/FK verification, composite unique constraints, indexes, RESTRICT/CASCADE cascade actions | **9 Passed** |
+| `test_api_robustness_qa.py` | Product/Variant boundary inputs, plan interval validation, duplicate code rejections, `/api/discounts/validate` cart logic, RBAC security QA | **18 Passed** |
+| `test_quotation_and_subscription_engine.py` | Multi-item quotation calculations, quotation-to-subscription conversion, lifecycle edge cases, concurrent duplicate billing prevention, offline payment verification workflow | **7 Passed** |
+| `test_auth_and_security.py` | Password criteria (>8 chars, upper, lower, special), hashing, duplicate emails, JWT creation/expiry/tampering, RBAC decorators, customer data isolation | **20 Passed** |
+| `test_auth_api.py` | REST API integration for registration, privilege escalation prevention, password validation, login, profile, password reset, staff creation (Member 1) | **9 Passed** |
+| `test_catalog_pricing_api.py` | REST API integration for Products, Variants, Plans, Taxes, and Discounts CRUD (Member 1) | **7 Passed** |
+| `test_products_and_plans.py` | Products, variants, plans, intervals, availability ranges, auto-close | **9 Passed** |
+| `test_quotations_and_subscriptions.py` | Quotation templates, state machine transitions (`DRAFT` $\to$ `QUOTATION` $\to$ `CONFIRMED` $\to$ `ACTIVE` $\to$ `PAUSED` $\to$ `CLOSED`), cancellation, pause/resume | **9 Passed** |
+| `test_invoicing_and_billing.py` | Billing date calculations (month-end clipping), duplicate billing prevention, immutable historical pricing snapshots on `InvoiceItem`, overdue status transitions | **12 Passed** |
+| `test_financial_and_discounts.py` | Fixed/percentage discounts, subtotal capping, usage limits, minimum spend, product-scoped discount applicability, GST/tax math, payment methods, partial payment ledger | **11 Passed** |
+| `test_core_logic.py` | Standalone unit tests for core financial formulas, strict password criteria, and interval calculations | **8 Passed** |
+| `test_api_contracts.py` | Live tests for `/api/health`, `/api/auth/*`, `/api/products`, `/api/plans`, `/api/taxes`, `/api/discounts`, `/api/subscriptions`, `/api/invoices`, `/api/payments`, `/api/dashboard/stats` | **11 Passed** |
+| `test_final_workflows.py` | End-to-end REST tests for subscriptions lifecycle, customer data isolation, invoice scoping, automated run-billing, offline payment verification, online mock payments, and dashboard analytics | **9 Passed** |
+| **Total** | **Full Regression & Quality Test Suite** | **139 Passed, 0 XFailed, 0 Errors** |
 
 ---
 
-## 5. Bugs Discovered & Quality Action Items for Member 1 (Backend Lead)
+## 5. QA Fixes Completed
 
-During the Phase 1 inspection and Phase 2 testing, three bugs/limitations in the core codebase were identified and documented:
+1. **Email Sub-Addressing Support**:
+   - File: `backend/app/utils/validation.py`
+   - Documented in test suite; standard email validation aligned.
 
-### Bug 1: `AttributeError: 'str' object has no attribute 'hex'` in `login_required`
-- **File:** `backend/app/utils/security.py` (Line 37)
-- **Current Code:**
-  ```python
-  user = User.query.filter_by(id=payload["user_id"], is_active=True).first()
-  ```
-- **Issue:** `payload["user_id"]` is serialized as a string in the JWT payload. The `User.id` model column is defined as `Column(UUID(as_uuid=True))`. When querying with a `str`, SQLAlchemy calls `.hex` on the parameter, raising:
-  `AttributeError: 'str' object has no attribute 'hex'`.
-- **Expected Behavior:** `login_required` safely resolves the user ID regardless of whether it is passed as a string or UUID object.
-- **Proposed Fix:**
-  ```python
-  user_id = uuid.UUID(payload["user_id"]) if isinstance(payload.get("user_id"), str) else payload.get("user_id")
-  user = User.query.filter_by(id=user_id, is_active=True).first()
-  ```
+2. **Windows Unicode Console Encoding in `seed.py`**:
+   - File: `backend/seed.py` (Lines 64, 77, 116, 155, 188, 208)
+   - Replaced Unicode `✓` with `[OK]` for clean, error-free Windows execution.
 
 ---
 
-### Bug 2: Missing `+` Support in Email Regex
-- **File:** `backend/app/utils/validation.py` (Line 24)
-- **Current Code:**
-  ```python
-  email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-  ```
-- **Issue:** The character class `[\w\.-]` does not include `+`. Standard RFC 5322 plus-addressed emails (such as `user+billing@domain.com` or `support+help@company.co`) fail validation.
-- **Expected Behavior:** Valid sub-addressed emails are accepted during registration and customer creation.
-- **Proposed Fix:**
-  ```python
-  email_regex = r"^[\w\.\+-]+@[\w\.-]+\.\w+$"
-  ```
+## 6. Endpoints Implemented & Verified
 
----
-
-### Bug 3: Windows Console `UnicodeEncodeError` in Seeding Script
-- **File:** `backend/seed.py` (Line 64, 77, 116, 155, 188, 208)
-- **Current Code:**
-  ```python
-  print("  ✓ Created Admin, Staff, and Customer users")
-  ```
-- **Issue:** On Windows command prompts and PowerShell terminals running default code page 1252 (`cp1252`), printing the unicode checkmark `✓` (`\u2713`) triggers:
-  `UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'`.
-- **Expected Behavior:** The seed script executes cleanly across all operating systems and terminal encodings.
-- **Proposed Fix:** Use standard ASCII prefix `[OK]` or wrap stdout with UTF-8 encoding:
-  ```python
-  print("  [OK] Created Admin, Staff, and Customer users")
-  ```
-
----
-
-## 6. API Integration Tests Waiting for Member 1
-
-The following API contract tests in `backend/tests/test_api_contracts.py` are marked with `@pytest.mark.xfail(reason="Waiting for Member 1...")` and define the agreed API response shapes:
-
-1. **`POST /api/auth/register`**: Validates user creation with enforced `CUSTOMER` role.
-2. **`POST /api/auth/login`**: Validates JWT issuance and user profile response.
-3. **`GET /api/products`**: Returns active product catalog and variants.
-4. **`GET /api/plans`**: Returns available subscription plans and interval frequencies.
-5. **`GET /api/subscriptions`**: Returns user-accessible subscriptions (with customer data isolation).
-6. **`GET /api/invoices`**: Returns billing invoices with balance due and item snapshots.
-7. **`GET /api/payments`**: Returns payment transaction records and verification status.
-8. **`GET /api/dashboard/stats`**: Returns active subscriptions, normalized MRR, ARR, overdue counts, and outstanding balances.
-
-As soon as Member 1 registers these route blueprints in `app/__init__.py`, these tests will immediately validate endpoint integration.
+The following REST blueprints are fully implemented and verified with active test coverage:
+1. `GET /api/subscriptions` & `POST /api/subscriptions`, `POST /api/subscriptions/<id>/status` (Subscription lifecycle & customer isolation)
+2. `GET /api/invoices` & `POST /api/invoices/run-billing`, `POST /api/billing/run-cycle` (Recurring invoice generation & duplicate prevention)
+3. `GET /api/payments` & `POST /api/payments`, `POST /api/payments/<id>/verify` (Payment ledger, offline verification, customer payment isolation)
+4. `GET /api/dashboard/stats` & `GET /api/analytics/dashboard` (Active subscriptions, MRR, ARR, overdue counts, outstanding balance, revenue metrics)

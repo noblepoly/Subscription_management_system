@@ -8,6 +8,8 @@ import { Modal } from '../../components/common/Modal';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Loader } from '../../components/common/Loader';
+import { EmptyState } from '../../components/common/EmptyState';
+import { ErrorState } from '../../components/common/ErrorState';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { Plus, CreditCard, CheckCircle2, ShieldCheck, AlertCircle, FileText } from 'lucide-react';
 
@@ -15,6 +17,7 @@ export const PaymentsPage = () => {
   const [payments, setPayments] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // New Payment Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -35,6 +38,8 @@ export const PaymentsPage = () => {
   const { addToast } = useToast();
 
   const loadData = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const [pRes, iRes] = await Promise.all([
         paymentsApi.getPayments(),
@@ -44,6 +49,7 @@ export const PaymentsPage = () => {
       // Filter invoices that have an outstanding balance due
       setInvoices(iRes.data.filter((inv) => inv.balance_due > 0));
     } catch (err) {
+      setError(err.message || 'Failed to load payments');
       addToast(err.message || 'Failed to load payments', 'error');
     } finally {
       setLoading(false);
@@ -52,7 +58,7 @@ export const PaymentsPage = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user?.role]);
 
   const openCreateModal = () => {
     if (invoices.length === 0) {
@@ -145,35 +151,20 @@ export const PaymentsPage = () => {
       header: 'Customer',
       key: 'customer_name',
       sortable: true,
-      render: (row) => <span className="font-medium text-slate-800 text-xs">{row.customer_name}</span>,
+      render: (row) => <span className="font-medium text-slate-800 text-xs">{row.customer_name || 'Customer'}</span>,
     },
     {
       header: 'Method',
       key: 'payment_method',
-      render: (row) => {
-        const isOnline = row.payment_method === 'ONLINE_MOCK_SIMULATED';
-        return (
-          <div>
-            <span
-              className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
-                isOnline
-                  ? 'bg-purple-50 text-purple-700 border-purple-200'
-                  : 'bg-slate-100 text-slate-700 border-slate-200'
-              }`}
-            >
-              {isOnline ? 'Online Mock Simulated' : row.payment_method.replace('_', ' ')}
-            </span>
-            {row.transaction_reference && (
-              <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[140px]">
-                Ref: {row.transaction_reference}
-              </p>
-            )}
-          </div>
-        );
-      },
+      sortable: true,
+      render: (row) => (
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700">
+          {row.payment_method === 'ONLINE_MOCK_SIMULATED' ? 'Online Card (Simulated)' : row.payment_method?.replace(/_/g, ' ')}
+        </span>
+      ),
     },
     {
-      header: 'Amount',
+      header: 'Amount Paid',
       key: 'amount',
       sortable: true,
       render: (row) => (
@@ -186,7 +177,7 @@ export const PaymentsPage = () => {
       render: (row) => (
         <div className="text-xs">
           <p className="text-slate-700 font-medium">{formatDateTime(row.payment_date)}</p>
-          <p className="text-[10px] text-slate-400">By: {row.recorder_name || 'System'}</p>
+          <p className="text-[10px] text-slate-400">By: {row.recorder_name || 'System / Online'}</p>
         </div>
       ),
     },
@@ -197,23 +188,30 @@ export const PaymentsPage = () => {
       render: (row) => <StatusBadge status={row.payment_status} />,
     },
     {
-      header: 'Staff Action',
+      header: 'Actions',
       key: 'actions',
       className: 'text-right',
       render: (row) => {
         if (row.payment_status === 'PENDING_VERIFICATION') {
+          if (isStaffOrAdmin) {
+            return (
+              <button
+                onClick={() => {
+                  setPaymentToVerify(row);
+                  setVerifyDialogOpen(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 ml-auto"
+                title="Verify and confirm offline payment receipt"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Verify & Approve</span>
+              </button>
+            );
+          }
           return (
-            <button
-              onClick={() => {
-                setPaymentToVerify(row);
-                setVerifyDialogOpen(true);
-              }}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 ml-auto"
-              title="Verify and confirm offline payment receipt"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Verify & Approve</span>
-            </button>
+            <span className="text-[11px] text-amber-600 font-semibold">
+              Pending Verification
+            </span>
           );
         }
         return (
@@ -227,35 +225,58 @@ export const PaymentsPage = () => {
 
   if (loading) return <Loader message="Loading payment transactions..." />;
 
+  if (error && payments.length === 0) {
+    return <ErrorState message={error} onRetry={loadData} />;
+  }
+
   const selectedInvoiceObj = invoices.find((i) => i.id === formData.invoice_id);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Payment Processing & Verification</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {isStaffOrAdmin ? 'Payment Processing & Verification' : 'My Payments'}
+          </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Reconcile payments, track partial installments, and verify offline wire / cheque deposits
+            {isStaffOrAdmin
+              ? 'Reconcile payments, track partial installments, and verify offline wire / cheque deposits'
+              : 'Review your historical payment receipts and verification statuses'}
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-sm shadow-indigo-600/30 transition-all self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Record New Payment</span>
-        </button>
+        {isStaffOrAdmin && (
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-sm shadow-indigo-600/30 transition-all self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record New Payment</span>
+          </button>
+        )}
       </div>
 
-      <DataTable
-        columns={columns}
-        data={payments}
-        searchKey="payment_number"
-        searchPlaceholder="Search payments by number..."
-        filterKey="payment_status"
-        filterOptions={filterOptions}
-      />
+      {payments.length === 0 ? (
+        <EmptyState
+          title="No Payments Found"
+          description={
+            isStaffOrAdmin
+              ? 'No payments recorded yet. Invoices with outstanding balances can receive payments.'
+              : 'You have not submitted any payments yet.'
+          }
+          actionText={isStaffOrAdmin && invoices.length > 0 ? 'Record Payment' : null}
+          onAction={isStaffOrAdmin && invoices.length > 0 ? openCreateModal : null}
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={payments}
+          searchKey="payment_number"
+          searchPlaceholder="Search payments by number..."
+          filterKey="payment_status"
+          filterOptions={filterOptions}
+        />
+      )}
 
       {/* Record Payment Modal */}
       <Modal
@@ -284,7 +305,7 @@ export const PaymentsPage = () => {
       >
         <form onSubmit={handleRecordPayment} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Select Invoice *</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Select Invoice with Balance Due *</label>
             <select
               value={formData.invoice_id}
               onChange={(e) => {
@@ -295,11 +316,12 @@ export const PaymentsPage = () => {
                   amount: inv ? inv.balance_due.toString() : '',
                 });
               }}
+              required
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             >
               {invoices.map((inv) => (
                 <option key={inv.id} value={inv.id}>
-                  {inv.invoice_number} — {inv.customer_name} (Balance: {formatCurrency(inv.balance_due)})
+                  {inv.invoice_number} ({inv.customer_name}) – Due: {formatCurrency(inv.balance_due)}
                 </option>
               ))}
             </select>
@@ -307,9 +329,14 @@ export const PaymentsPage = () => {
 
           {selectedInvoiceObj && (
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
-              <p className="text-slate-500">Invoice Total: <strong className="text-slate-800">{formatCurrency(selectedInvoiceObj.total_amount)}</strong></p>
-              <p className="text-slate-500">Already Paid: <strong className="text-emerald-600">{formatCurrency(selectedInvoiceObj.amount_paid)}</strong></p>
-              <p className="text-slate-500">Outstanding Balance: <strong className="text-indigo-600">{formatCurrency(selectedInvoiceObj.balance_due)}</strong></p>
+              <div className="flex justify-between text-slate-600">
+                <span>Invoice Total:</span>
+                <span>{formatCurrency(selectedInvoiceObj.total_amount)}</span>
+              </div>
+              <div className="flex justify-between font-bold text-slate-900">
+                <span>Outstanding Balance Due:</span>
+                <span className="text-indigo-600">{formatCurrency(selectedInvoiceObj.balance_due)}</span>
+              </div>
             </div>
           )}
 
@@ -319,7 +346,7 @@ export const PaymentsPage = () => {
               type="number"
               step="0.01"
               min="0.01"
-              max={selectedInvoiceObj ? selectedInvoiceObj.balance_due : undefined}
+              max={selectedInvoiceObj?.balance_due}
               required
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
@@ -334,46 +361,46 @@ export const PaymentsPage = () => {
               onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             >
-              <option value="BANK_TRANSFER">Bank Wire / Wire Transfer</option>
-              <option value="CASH">Cash Deposit</option>
-              <option value="CHEQUE">Cheque</option>
-              <option value="ONLINE_MOCK_SIMULATED">Online Mock Simulated (Direct Card Simulation)</option>
+              <option value="BANK_TRANSFER">Bank Wire / Electronic Transfer</option>
+              <option value="CASH">Cash Settlement</option>
+              <option value="CHEQUE">Cheque / Check</option>
+              <option value="ONLINE_MOCK_SIMULATED">Online Simulated Payment</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Transaction Reference</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Transaction Reference / Cheque #</label>
             <input
               type="text"
+              placeholder="e.g. WIRE-8392183 or CHK-449"
               value={formData.transaction_reference}
               onChange={(e) => setFormData({ ...formData, transaction_reference: e.target.value })}
-              placeholder="e.g. WIRE-884920 or CHQ-4819"
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Internal Notes</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Staff Notes</label>
             <textarea
               rows="2"
+              placeholder="Additional internal audit notes..."
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="Notes on receipt confirmation..."
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             />
           </div>
         </form>
       </Modal>
 
-      {/* Verification Confirmation Dialog */}
+      {/* Verify Offline Payment Confirmation Dialog */}
       <ConfirmDialog
         isOpen={verifyDialogOpen}
         onClose={() => setVerifyDialogOpen(false)}
         onConfirm={handleVerifyPayment}
         loading={verifying}
-        title="Verify Offline Payment Deposit"
-        message={`Confirm that the funds for ${paymentToVerify?.payment_number} (${formatCurrency(paymentToVerify?.amount)}) have cleared into the company account. This will deduct from the invoice balance due.`}
-        confirmText="Confirm & Verify Payment"
+        title="Verify & Confirm Payment Receipt"
+        message={`Are you sure you want to verify payment ${paymentToVerify?.payment_number} of ${formatCurrency(paymentToVerify?.amount)}? This will apply the funds to the invoice ledger.`}
+        confirmText="Confirm Verification"
       />
     </div>
   );

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { invoicesApi } from '../../api/invoicesApi';
 import { paymentsApi } from '../../api/paymentsApi';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { DataTable } from '../../components/common/DataTable';
 import { Modal } from '../../components/common/Modal';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Loader } from '../../components/common/Loader';
+import { EmptyState } from '../../components/common/EmptyState';
+import { ErrorState } from '../../components/common/ErrorState';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import {
   Receipt,
@@ -19,8 +22,10 @@ import {
 } from 'lucide-react';
 
 export const InvoicesPage = () => {
+  const { user, isStaffOrAdmin } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Detail Modal State
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -36,10 +41,14 @@ export const InvoicesPage = () => {
   const { addToast } = useToast();
 
   const loadInvoices = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const { data } = await invoicesApi.getInvoices();
+      const params = isStaffOrAdmin ? {} : { customerId: user?.id };
+      const { data } = await invoicesApi.getInvoices(params);
       setInvoices(data);
     } catch (err) {
+      setError(err.message || 'Failed to load invoices');
       addToast(err.message || 'Failed to load invoices', 'error');
     } finally {
       setLoading(false);
@@ -48,7 +57,7 @@ export const InvoicesPage = () => {
 
   useEffect(() => {
     loadInvoices();
-  }, []);
+  }, [user?.role]);
 
   const openPaymentModal = (invoice) => {
     setSelectedInvoice(invoice);
@@ -78,7 +87,7 @@ export const InvoicesPage = () => {
         amount: amt,
         payment_method: paymentMethod,
         notes: paymentNotes,
-        verified_by_staff: true, // When recorded from Staff/Admin invoices screen
+        verified_by_staff: true,
       });
       addToast('Payment successfully recorded and balance updated', 'success');
       setPaymentModalOpen(false);
@@ -105,48 +114,26 @@ export const InvoicesPage = () => {
       sortable: true,
       render: (row) => (
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+          <div className="p-2 rounded-xl bg-slate-100 text-slate-700">
             <Receipt className="w-4 h-4" />
           </div>
           <div>
             <p className="font-semibold text-slate-900 text-sm">{row.invoice_number}</p>
-            <p className="text-xs text-slate-400">{row.subscription_number}</p>
+            {isStaffOrAdmin && <p className="text-xs text-slate-400">{row.customer_name || 'Customer'}</p>}
           </div>
         </div>
       ),
     },
     {
-      header: 'Customer',
-      key: 'customer_name',
-      sortable: true,
-      render: (row) => (
-        <div>
-          <p className="font-medium text-slate-800 text-xs">{row.customer_name}</p>
-          <p className="text-[11px] text-slate-400 truncate max-w-[150px]">{row.customer_email}</p>
-        </div>
-      ),
-    },
-    {
-      header: 'Billing Period',
+      header: 'Billing Cycle',
       key: 'billing_period_start',
-      render: (row) => (
-        <span className="text-xs text-slate-600 font-medium">
-          {formatDate(row.billing_period_start)} → {formatDate(row.billing_period_end)}
-        </span>
-      ),
-    },
-    {
-      header: 'Due Date',
-      key: 'due_date',
       sortable: true,
       render: (row) => (
         <div className="text-xs">
-          <span className={`font-semibold ${row.is_overdue ? 'text-rose-600' : 'text-slate-700'}`}>
-            {formatDate(row.due_date)}
-          </span>
-          {row.is_overdue && (
-            <span className="text-[10px] text-rose-600 block font-bold">Past Due Date</span>
-          )}
+          <p className="text-slate-700 font-medium">
+            {formatDate(row.billing_period_start)} – {formatDate(row.billing_period_end)}
+          </p>
+          <span className="text-[10px] text-slate-400">Due: {formatDate(row.due_date)}</span>
         </div>
       ),
     },
@@ -194,7 +181,7 @@ export const InvoicesPage = () => {
             <Eye className="w-4 h-4" />
           </button>
 
-          {row.balance_due > 0 && row.status !== 'CANCELLED' && (
+          {isStaffOrAdmin && row.balance_due > 0 && row.status !== 'CANCELLED' && (
             <button
               onClick={() => openPaymentModal(row)}
               className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
@@ -211,25 +198,42 @@ export const InvoicesPage = () => {
 
   if (loading) return <Loader message="Loading invoices & billing registers..." />;
 
+  if (error && invoices.length === 0) {
+    return <ErrorState message={error} onRetry={loadInvoices} />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Invoices & Billing</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {isStaffOrAdmin ? 'Invoices & Billing' : 'My Invoices'}
+          </h1>
           <p className="text-xs text-slate-500 mt-1">
             Automated recurring invoice ledger with immutable pricing snapshots, taxes, and balance tracking
           </p>
         </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={invoices}
-        searchKey="invoice_number"
-        searchPlaceholder="Search by invoice # or customer..."
-        filterKey="status"
-        filterOptions={filterOptions}
-      />
+      {invoices.length === 0 ? (
+        <EmptyState
+          title="No Invoices Found"
+          description={
+            isStaffOrAdmin
+              ? 'No billing invoices generated yet. Run the recurring billing cycle from the dashboard or wait for subscription renewal.'
+              : 'You have no invoices generated on your account.'
+          }
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={invoices}
+          searchKey="invoice_number"
+          searchPlaceholder="Search by invoice # or customer..."
+          filterKey="status"
+          filterOptions={filterOptions}
+        />
+      )}
 
       {/* Invoice Detail / Receipt Modal */}
       {selectedInvoice && (
@@ -258,21 +262,20 @@ export const InvoicesPage = () => {
           }
         >
           <div className="space-y-5 print:p-0">
-            {/* Invoice Meta Card */}
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Status</span>
                 <StatusBadge status={selectedInvoice.status} className="mt-1" />
               </div>
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Billing Period</span>
-                <span className="font-semibold text-slate-800 block mt-1">
-                  {formatDate(selectedInvoice.billing_period_start)} - {formatDate(selectedInvoice.billing_period_end)}
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Invoice Date</span>
+                <span className="text-xs font-semibold text-slate-800 block mt-1">
+                  {formatDate(selectedInvoice.invoice_date)}
                 </span>
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Due Date</span>
-                <span className="font-semibold text-slate-800 block mt-1">
+                <span className="text-xs font-semibold text-slate-800 block mt-1">
                   {formatDate(selectedInvoice.due_date)}
                 </span>
               </div>
