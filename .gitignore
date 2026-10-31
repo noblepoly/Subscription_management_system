@@ -38,6 +38,9 @@ ENV/
 !.env.example
 *.pem
 *.key
+*.db
+*.sqlite3
+*.sqlite
 
 # Frontend dependencies and builds
 node_modules/

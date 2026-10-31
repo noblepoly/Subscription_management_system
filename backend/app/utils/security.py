@@ -1,4 +1,5 @@
 import jwt
+import uuid
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from flask import request, jsonify, g
@@ -31,10 +32,15 @@ def login_required(f):
         
         token = auth_header.split(" ")[1]
         payload = decode_token(token)
-        if not payload:
+        if not payload or not payload.get("user_id"):
             return jsonify({"error": "Invalid or expired token", "code": "TOKEN_INVALID"}), 401
         
-        user = User.query.filter_by(id=payload["user_id"], is_active=True).first()
+        try:
+            target_user_id = uuid.UUID(payload["user_id"]) if isinstance(payload["user_id"], str) else payload["user_id"]
+        except (ValueError, TypeError):
+            return jsonify({"error": "Malformed user identifier in token", "code": "TOKEN_INVALID"}), 401
+
+        user = User.query.filter_by(id=target_user_id, is_active=True).first()
         if not user:
             return jsonify({"error": "User account inactive or not found", "code": "USER_NOT_FOUND"}), 401
         

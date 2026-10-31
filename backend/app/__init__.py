@@ -2,6 +2,8 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from app.config import Config
 from app.db import db_session
+from app.routes.auth_routes import auth_bp
+from app.routes.user_routes import user_bp
 
 def create_app():
     app = Flask(__name__)
@@ -9,6 +11,10 @@ def create_app():
 
     # Enable CORS for frontend Vite development server
     CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+
+    # Register Blueprints
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(user_bp)
 
     @app.teardown_appcontext
     def shutdown_session(exception=None):
