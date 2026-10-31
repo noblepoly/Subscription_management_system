@@ -81,6 +81,8 @@ def register():
         return jsonify({
             "success": True,
             "message": "Registration successful.",
+            "user": new_user.to_dict(),
+            "token": token,
             "data": {
                 "user": new_user.to_dict(),
                 "token": token
@@ -133,6 +135,8 @@ def login():
     return jsonify({
         "success": True,
         "message": "Login successful.",
+        "user": user.to_dict(),
+        "token": token,
         "data": {
             "user": user.to_dict(),
             "token": token
